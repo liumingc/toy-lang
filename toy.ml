@@ -17,13 +17,13 @@ let () =
     let l = Lex.new_lexer () in
     let rec lp l =
         begin try
-            let e, l' = Parser.pa_expr l in
-            print_endline "=> ";
-            print_endline (Parser.to_string e);
-            print_endline "% ";
-            lp l'
+          let e, l' = Parser.pa_expr l in
+          print_endline "=> ";
+          print_endline (Parser.to_string e);
+          print_endline "% ";
+          lp l'
         with Parser.Noparse ->
-            print_endline "! parser error"
+          print_endline "! parser error"
         end
     in
     lp l

@@ -5,6 +5,7 @@ Some nameing abbreviations:
     i is short for input
  *)
 
+(* open Printf *)
 exception Noparse
 
 let (++) p1 p2 input =
@@ -80,9 +81,9 @@ and args_to_string args =
 module L = Lex;;
 
 let pa_atom t l =
-    let (t', l') as x = L.lex l in
-    if t' = t then x, l'
-    else raise Noparse
+  let (t', l') as x = L.lex l in
+  if t' = t then x, l'
+  else raise Noparse
 ;;
 
 let rec pa_var l =
@@ -142,7 +143,9 @@ and pa_let l =
         end l in
     Let (name, e1, e2), l'
 and pa_begin l =
-    let rs, l' = listof pa_expr (pa_atom L.Semicolon) l in
+  let comb_p = pa_atom L.Begin ++
+  (listof pa_expr (pa_atom L.Semicolon)) ++ pa_atom L.End in
+  let ((_, rs), _), l' = comb_p l in
     Begin rs, l'
 ;;
 

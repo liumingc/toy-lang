@@ -30,6 +30,7 @@ type tok =
     | Then
     | Else
     | Do
+    | Begin
     | End
     | While
     | For
@@ -62,6 +63,7 @@ let to_string t =
     | Fun -> "FUN"
     | Fn -> "FN"
     | Do -> "DO"
+    | Begin -> "BEGIN"
     | End -> "END"
     | Let -> "LET"
     | In -> "IN"
@@ -90,6 +92,7 @@ let kwtab = Hashtbl.of_seq (List.to_seq [
     ("fn", Fn);
     ("for", For);
     ("do", Do);
+    ("begin", Begin);
     ("end", End);
     ("while", While);
     ("let", Let);
@@ -182,6 +185,7 @@ let next_tok ic =
                 let s = read_digits x in
                 Num (Scanf.sscanf s "%f" (fun x -> x))
         | ' ' | '\t' -> token ()
+        | '\n' -> token ()
         | '.' -> Dot
         | '(' -> Lbrace
         | ')' -> Rbrace
@@ -236,7 +240,7 @@ let lex l =
 (*
 let lex l =
     let (x, _) as a = lex' l in
-    Printf.printf "token. %s\n" (to_string x);
+    Printf.printf "<- token. %s\n" (to_string x);
     a
 ;;
 *)
