@@ -8,6 +8,7 @@ Some nameing abbreviations:
 (* open Printf *)
 exception Noparse
 
+(* Why use tuple instead of list? because r1 and r2 can have different types *)
 let (++) p1 p2 input =
     let r1, i1 = p1 input in
     let r2, i2 = p2 i1 in
@@ -42,15 +43,32 @@ let listof p sep input =
     r1::r2, rest
 ;;
 
+(*
+ * Do i need these things:
+   * tuples
+   * prim1(~, !), prim2(+, -) etc
+   In syntax, need () to force precedence,
+   but that should be gone in ast(i think).
+ *)
+(*
+type pr =
+  | Prim_plus
+  | Prim_minus (* etc *)
+;;
+*)
+
 type ast =
     | Var of string
     | Num of float
     | Str of string
     | If of ast * ast * ast
     | Fun of string * string list * ast (* How to specify the first string as Var x? *)
+    | Fn of string list * ast (* anonymous function *)
+    | App of ast * ast list (* Application *)
     | Let of string * ast * ast
     | While of ast * ast
     | Begin of ast list
+    | Prim of string
     (* More to add *)
 ;;
 
@@ -63,7 +81,11 @@ let rec to_string ast =
     | If (e1, e2, e3) ->
             sprintf "IF %s\nTHEN %s\nELSE %s" (to_string e1) (to_string e2) (to_string e3)
     | Fun (x, args, e) ->
-            sprintf "FUN %s(%s) =\n\t%s" x (args_to_string args) (to_string e)
+            sprintf "FUN %s(%s) =\n%s" x (args_to_string args) (to_string e)
+    | Fn (args, e) ->
+            sprintf "FN (%s) => %s" (args_to_string  args) (to_string e)
+    | App (f, args) ->
+        sprintf "APP (%s) -> %s" (list_to_string to_string args) (to_string f)
     | Let (x, e1, e2) ->
             sprintf "LET %s = %s IN\n%s" x (to_string e1) (to_string e2)
     | While (e1, e2) ->
@@ -72,9 +94,13 @@ let rec to_string ast =
             sprintf "BEGIN\n" ^
             List.fold_right (fun x r -> (to_string x) ^ ";\n" ^ r) es "" ^
             "END\n"
+    | Prim pr ->
+        sprintf "Prim(%s)" pr
     end;
 and args_to_string args =
     List.fold_right (fun x r -> (x ^ ", " ^ r)) args ""
+  and list_to_string f ls =
+    List.fold_right (fun x r -> (f x ^ ", " ^ r)) ls ""
 ;;
 
 (* from here on, parser is closely binded with lexer *)
@@ -110,14 +136,16 @@ let pa_const =
     pa_str ||| pa_num;;
 
 let rec pa_expr l =
-    (* need to handle function call and binary op *)
+    (* need to handle function call and binary op
+     * how to handle left recursion? *)
     begin
     pa_if
     ||| pa_fun
-    ||| pa_const
     ||| pa_let
     ||| pa_begin
-    ||| pa_var
+    ||| pa_brace
+    (*||| pa_const*)
+    ||| pa_var_or_app
     end l
 and pa_if l =
     let (((((_, e1), _), e2), _), e3), l' =
@@ -136,6 +164,12 @@ and pa_fun l =
     Fun (name, arglist, e2), l'
 and pa_arglist l =
     listof pa_name (pa_atom L.Comma) l
+  and pa_fn l =
+    let p1 =
+      pa_atom L.Fn ++ pa_atom L.Lbrace ++ pa_arglist ++ pa_atom L.Rbrace ++
+      pa_atom L.Rarrow ++ pa_expr in
+    let ((((_, arglist), _), _), e), l' = p1 l in
+    Fn (arglist, e), l'
 and pa_let l =
     let (((((_, name), _), e1), _), e2), l' =
         begin
@@ -143,10 +177,40 @@ and pa_let l =
         end l in
     Let (name, e1, e2), l'
 and pa_begin l =
+  begin
   let comb_p = pa_atom L.Begin ++
   (listof pa_expr (pa_atom L.Semicolon)) ++ pa_atom L.End in
   let ((_, rs), _), l' = comb_p l in
     Begin rs, l'
+  end
+  and pa_brace l =
+    let comb_p = pa_atom L.Lbrace ++ pa_expr ++ pa_atom L.Rbrace in
+    let ((_, e), _), l' = comb_p l in
+    e, l'
+  and pa_oprand l =
+    (pa_var ||| pa_const ||| pa_fn) l
+  and pa_var_or_app l =
+    let f, l1 = pa_oprand l (* or pa_fn? *) in
+    let next, l2 = L.lex l1 in
+    match next with
+    | L.Lbrace ->
+        (* Application. So f (a b) is ambiguous for (a b).
+         * need to use another symbol to force precedence.
+         * I think there is a reason for distinguishing expr and stmt.
+         *)
+        begin
+          let p1 = listof pa_expr (pa_atom L.Comma) in
+          let p2 = p1 ++ pa_atom L.Rbrace in
+          let (rs, _), l3 = p2 l2 in
+          App (f, rs), l3
+        end
+    | L.Plus | L.Minus | L.Eq | L.Less | L.Great ->
+        (* should define a pa_bin to enhance this
+         * BUG: can't handle `a + 2 + 3` for now.
+         * *)
+        let op2, l3 = pa_oprand l2 in
+        App (Prim (L.to_string next), [f; op2]), l3
+    | _ -> f, l1
 ;;
 
 (*
