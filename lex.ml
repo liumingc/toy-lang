@@ -162,7 +162,7 @@ let next_tok ic =
         s in
     let read_digits x =
         (* TODO check 3.45.2 as error *)
-        let s = read_until (fun x -> not (is_digit x && x != '.')) (Some x) in
+        let s = read_until (fun x -> not (is_digit x || x = '.')) (Some x) in
         s in
     let choice expect a b =
         let y = readc () in
@@ -183,7 +183,8 @@ let next_tok ic =
                 end
         | x when is_digit x ->
                 let s = read_digits x in
-                Num (Scanf.sscanf s "%f" (fun x -> x))
+                (*Num (Scanf.sscanf s "%f" (fun x -> x))*)
+                Num (float_of_string s)
         | ' ' | '\t' -> token ()
         | '\n' -> token ()
         | '.' -> Dot
