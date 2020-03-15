@@ -20,6 +20,9 @@ let () =
           let e, l' = Parser.pa_expr l in
           print_endline "=> ";
           print_endline (Parser.to_string e);
+          print_endline "|=> ";
+          let irs = Transl.trans e Env.empty in
+          Ir.print_irs irs;
           print_endline "% ";
           lp l'
         with Parser.Noparse ->
