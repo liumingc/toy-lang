@@ -1,7 +1,7 @@
 open Printf
 
 type instr =
-    | Const of float
+    | Const of int
     | Sconst of string
     | Acc of int
     | Envacc of int (* to access free variables *)
@@ -56,7 +56,7 @@ let get_prim_nr pr =
 
 let print_ir = function
     | Const i ->
-            printf "\tconst %f\n" i
+            printf "\tconst %d\n" i
     | Sconst s ->
             printf "\tsconst %s\n" s
     | Acc i ->

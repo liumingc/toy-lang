@@ -14,13 +14,17 @@ let () =
 *)
 
 let () =
-    let l = Lex.new_lexer () in
+    let file_name = ref "-" in
+    if Array.length Sys.argv > 1 then begin
+        file_name := Sys.argv.(1)
+    end;
+    let l = Lex.new_lexer !file_name in
     let rec lp l =
         begin try
           let e, l' = Parser.pa_expr l in
-          print_endline "=> ";
+          print_endline "==AST==> ";
           print_endline (Parser.to_string e);
-          print_endline "|=> ";
+          print_endline "=INST|=> ";
           let irs = Transl.trans e Env.empty in
           Ir.print_irs irs;
           print_endline "% ";

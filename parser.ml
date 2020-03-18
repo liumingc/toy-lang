@@ -5,7 +5,7 @@ Some nameing abbreviations:
     i is short for input
  *)
 
-(* open Printf *)
+open Printf
 exception Noparse
 
 (* Why use tuple instead of list? because r1 and r2 can have different types *)
@@ -59,7 +59,7 @@ type pr =
 
 type ast =
     | Var of string
-    | Num of float
+    | Num of int
     | Str of string
     | If of ast * ast * ast
     | Fun of string * string list * ast (* How to specify the first string as Var x? *)
@@ -68,15 +68,27 @@ type ast =
     | Let of string * ast * ast
     | While of ast * ast
     | Begin of ast list
+    | Match of ast * clause list
     | Prim of string
     (* More to add *)
+and clause =
+    pat * ast option * ast (* pattern [when e] -> e *)
+and pat =
+    | Pconsti of int
+    | Pconsts of string
+    | Pvar of string
+    | Pany
+    | Pctor of pat list (* constructor, or sum type *)
+    | Precord of recpat list * bool (* if has ..., then bool is true *)
+    | Ptuple of pat list
+and recpat = string * pat
 ;;
 
 let rec to_string ast =
-    let open Printf in
+    (*let open Printf in*)
     begin match ast with
     | Var x -> "Var(" ^ x ^ ")"
-    | Num x -> "Num(" ^ string_of_float x ^ ")"
+    | Num x -> "Num(" ^ string_of_int x ^ ")"
     | Str x -> "Str(" ^ x ^ ")"
     | If (e1, e2, e3) ->
             sprintf "IF %s\nTHEN %s\nELSE %s" (to_string e1) (to_string e2) (to_string e3)
@@ -94,13 +106,31 @@ let rec to_string ast =
             sprintf "BEGIN\n" ^
             List.fold_right (fun x r -> (to_string x) ^ ";\n" ^ r) es "" ^
             "END\n"
+    | Match (e, cls) ->
+            sprintf "MATCH %s WITH\n" (to_string e) ^
+            List.fold_right (fun x r -> (cla_to_string x) ^ "\n" ^ r) cls ""
     | Prim pr ->
         sprintf "Prim(%s)" pr
-    end;
+    end
 and args_to_string args =
     List.fold_right (fun x r -> (x ^ ", " ^ r)) args ""
-  and list_to_string f ls =
+and list_to_string f ls =
     List.fold_right (fun x r -> (f x ^ ", " ^ r)) ls ""
+and cla_to_string = function (pat, g, e) ->
+    let opt_str = begin match g with
+    | None -> ""
+    | Some e -> to_string e end in
+    sprintf "| %s [%s] => %s" (pat_to_string pat) opt_str (to_string e)
+and pat_to_string = function
+    | Pconsti i -> sprintf "Pconst %d" i
+    | Pconsts s -> sprintf "Pconst %s" s
+    | Pvar s -> sprintf "Pvar %s" s
+    | Pany -> "Pany"
+    | Pctor ps ->
+            "Pctor(" ^
+            List.fold_right (fun x r -> pat_to_string x ^ "," ^ r) ps ")"
+    | Precord (_, _) -> "Precord"
+    | Ptuple ps -> List.fold_right (fun x r -> pat_to_string x ^ "," ^ r) ps ""
 ;;
 
 (* from here on, parser is closely binded with lexer *)
@@ -146,6 +176,7 @@ let rec pa_expr l =
     ||| pa_brace
     (*||| pa_const*)
     ||| pa_var_or_app
+    ||| pa_match
     end l
 and pa_if l =
     let (((((_, e1), _), e2), _), e3), l' =
@@ -164,7 +195,7 @@ and pa_fun l =
     Fun (name, arglist, e2), l'
 and pa_arglist l =
     listof pa_name (pa_atom L.Comma) l
-  and pa_fn l =
+and pa_fn l =
     let p1 =
       pa_atom L.Fn ++ pa_atom L.Lbrace ++ pa_arglist ++ pa_atom L.Rbrace ++
       pa_atom L.Rarrow ++ pa_expr in
@@ -177,40 +208,60 @@ and pa_let l =
         end l in
     Let (name, e1, e2), l'
 and pa_begin l =
-  begin
   let comb_p = pa_atom L.Begin ++
   (listof pa_expr (pa_atom L.Semicolon)) ++ pa_atom L.End in
   let ((_, rs), _), l' = comb_p l in
     Begin rs, l'
-  end
-  and pa_brace l =
+and pa_brace l =
     let comb_p = pa_atom L.Lbrace ++ pa_expr ++ pa_atom L.Rbrace in
     let ((_, e), _), l' = comb_p l in
     e, l'
-  and pa_oprand l =
+and pa_oprand l =
     (pa_var ||| pa_const ||| pa_fn) l
-  and pa_var_or_app l =
+and pa_var_or_app l =
     let f, l1 = pa_oprand l (* or pa_fn? *) in
     let next, l2 = L.lex l1 in
     match next with
     | L.Lbrace ->
-        (* Application. So f (a b) is ambiguous for (a b).
-         * need to use another symbol to force precedence.
+            (* Application. So f (a b) is ambiguous for (a b).
+             * need to use another symbol to force precedence.
          * I think there is a reason for distinguishing expr and stmt.
          *)
-        begin
-          let p1 = listof pa_expr (pa_atom L.Comma) in
-          let p2 = p1 ++ pa_atom L.Rbrace in
-          let (rs, _), l3 = p2 l2 in
-          App (f, rs), l3
+            begin
+                let p1 = listof pa_expr (pa_atom L.Comma) in
+                let p2 = p1 ++ pa_atom L.Rbrace in
+                let (rs, _), l3 = p2 l2 in
+                App (f, rs), l3
         end
     | L.Plus | L.Minus | L.Eq | L.Less | L.Great ->
-        (* should define a pa_bin to enhance this
-         * BUG: can't handle `a + 2 + 3` for now.
-         * *)
-        let op2, l3 = pa_oprand l2 in
-        App (Prim (L.to_string next), [f; op2]), l3
+            let op2, l3 = pa_oprand l2 in
+            App (Prim (L.to_string next), [f; op2]), l3
+            (* should define a pa_bin to enhance this
+             * BUG: can't handle `a + 2 + 3` for now. *)
     | _ -> f, l1
+and pa_match l =
+    let comb_p =
+        pa_atom L.Match ++ pa_expr ++ pa_atom L.With ++
+        listof pa_cla (pa_atom L.Bar) in
+    let (((_, e1), _), clas), l' = comb_p l in
+    Match (e1, clas), l'
+and pa_cla l =
+    let comb_p =
+        (* TODO handle when clause *)
+        pa_pat ++ pa_atom L.Rarrow ++ pa_expr in
+    let ((p, _), e2), l' = comb_p l in
+    (p, None, e2), l'
+and pa_pat l =
+    let t', l' = L.lex l in
+    let p = begin match t' with
+    | L.Num i -> Pconsti i
+    | L.Str s -> Pconsts s
+    | L.Ident i -> Pvar i
+    | L.Underline -> Pany
+    (* TODO *)
+    | _ -> raise Noparse
+    end in
+    p, l'
 ;;
 
 (*

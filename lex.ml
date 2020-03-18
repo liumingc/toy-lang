@@ -1,7 +1,7 @@
 type tok =
     | Ident of string
     | Str of string
-    | Num of float
+    | Num of int (*float*)
     (* Special symbols *)
     | Dot
     | Lbrace
@@ -24,6 +24,8 @@ type tok =
     | Star  (* * *)
     | Slash (* / *)
     | Bar (* | *)
+    | Underline (* _ *)
+    | Dddot
     | Eof
     (* Keyword *)
     | If
@@ -38,13 +40,21 @@ type tok =
     | Fn
     | Let
     | In
+    | Match
+    | With
+    | When
+    | Of
+    | As
+    | And
+    | Type
+    | Datatype
 ;;
 
 let to_string t =
     match t with
     | Ident x -> "Ident(" ^ x ^ ")"
     | Str x -> "Str(" ^ x ^ ")"
-    | Num x -> "Num(" ^ string_of_float x ^ ")"
+    | Num x -> "Num(" ^ string_of_int x ^ ")"
     | Dot -> "."
     | Lbrace -> "("
     | Rbrace -> ")"
@@ -56,6 +66,8 @@ let to_string t =
     | Plus -> "+"
     | Minus -> "-"
     | Star -> "*"
+    | Underline -> "_"
+    | Dddot -> "..."
     | Unkown c -> "?" ^ Printf.sprintf "%c" c
     | If -> "IF"
     | Then -> "THEN"
@@ -69,6 +81,14 @@ let to_string t =
     | In -> "IN"
     | While -> "WHILE"
     | For -> "FOR"
+    | Match -> "MATCH"
+    | With -> "WITH"
+    | When -> "WHEN"
+    | Of -> "OF"
+    | As -> "AS"
+    | And -> "AND"
+    | Type -> "TYPE"
+    | Datatype -> "DATATYPE"
     | Lbracket -> "["
     | Rbracket -> "]"
     | Larrow -> "=>"
@@ -97,6 +117,12 @@ let kwtab = Hashtbl.of_seq (List.to_seq [
     ("while", While);
     ("let", Let);
     ("in", In);
+    ("match", Match);
+    ("with", With);
+    ("as", As);
+    ("when", When);
+    ("type", Type);
+    ("datatype", Datatype);
 ]);;
 
 
@@ -151,7 +177,7 @@ let next_tok ic =
         s in
     let is_alpha x =
         match x with
-        | 'a' .. 'z' | 'A' .. 'Z' | '_' | '\'' -> true
+        | 'a' .. 'z' | 'A' .. 'Z' | '\'' -> true
         | _ -> false in
     let is_digit x =
         match x with
@@ -162,7 +188,7 @@ let next_tok ic =
         s in
     let read_digits x =
         (* TODO check 3.45.2 as error *)
-        let s = read_until (fun x -> not (is_digit x || x = '.')) (Some x) in
+        let s = read_until (fun x -> not (is_digit x (* || x = '.' *) )) (Some x) in
         s in
     let choice expect a b =
         let y = readc () in
@@ -184,7 +210,8 @@ let next_tok ic =
         | x when is_digit x ->
                 let s = read_digits x in
                 (*Num (Scanf.sscanf s "%f" (fun x -> x))*)
-                Num (float_of_string s)
+                (*Num (float_of_string s)*)
+                Num (int_of_string s)
         | ' ' | '\t' -> token ()
         | '\n' -> token ()
         | '.' -> Dot
@@ -203,6 +230,8 @@ let next_tok ic =
         | '/' -> Slash
         | '*' -> Star
         | '+' -> Plus
+        | '_' -> Underline
+        | '|' -> Bar
         | _ -> Unkown x
         end in
     token ();;
@@ -215,10 +244,17 @@ type t =
 ;;
 
 
-let tok_cache = Array.make 1000 Eof;; (* TODO the cache should be increasing automatically *)
-let ic = stdin;; (* TODO *)
+let tok_cache = Array.make 5000 Eof;; (* TODO the cache should be increasing automatically *)
+let ic = ref stdin;; (* TODO *)
 
-let new_lexer () = Lpending 0;;
+let new_lexer file_name =
+    if file_name <> "-" then begin
+        try
+            let fh = open_in file_name in
+            ic := fh
+        with _ -> ignore ()
+    end;
+    Lpending 0;;
 
 let lex l =
     match l with
@@ -228,7 +264,7 @@ let lex l =
             match tok_cache.(i) with
             | Eof ->
                     begin try
-                        let x = next_tok ic in
+                        let x = next_tok !ic in
                         tok_cache.(i) <- x;
                         x, Lpending (i+1)
                     with End_of_file ->
