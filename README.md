@@ -7,6 +7,8 @@
 ```bash
 dune build
 _build/default/toy.exe
+# or
+_build/default/toy.exe tests/match.tl
 ```
 
 ## TODO

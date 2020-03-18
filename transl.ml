@@ -54,5 +54,5 @@ let rec trans expr env =
                 (trans a env) @ ins) es []
     | Prim pr ->
             [Ir.Getglobal (Ir.get_prim_nr pr)] (* TODO *)
-    | _ -> failwith "Not handled"
+    | e -> failwith ("Not handled:" ^ to_string e)
 ;;

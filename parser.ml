@@ -6,7 +6,9 @@ Some nameing abbreviations:
  *)
 
 open Printf
+
 exception Noparse
+exception Done
 
 (* Why use tuple instead of list? because r1 and r2 can have different types *)
 let (++) p1 p2 input =
@@ -97,7 +99,7 @@ let rec to_string ast =
     | Fn (args, e) ->
             sprintf "FN (%s) => %s" (args_to_string  args) (to_string e)
     | App (f, args) ->
-        sprintf "APP (%s) -> %s" (list_to_string to_string args) (to_string f)
+        sprintf "%s(%s)" (to_string f) (list_to_string to_string args)
     | Let (x, e1, e2) ->
             sprintf "LET %s = %s IN\n%s" x (to_string e1) (to_string e2)
     | While (e1, e2) ->
@@ -119,8 +121,8 @@ and list_to_string f ls =
 and cla_to_string = function (pat, g, e) ->
     let opt_str = begin match g with
     | None -> ""
-    | Some e -> to_string e end in
-    sprintf "| %s [%s] => %s" (pat_to_string pat) opt_str (to_string e)
+    | Some e -> "WHEN " ^ to_string e end in
+    sprintf "| %s%s => %s" (pat_to_string pat) opt_str (to_string e)
 and pat_to_string = function
     | Pconsti i -> sprintf "Pconst %d" i
     | Pconsts s -> sprintf "Pconst %s" s
@@ -139,6 +141,7 @@ module L = Lex;;
 let pa_atom t l =
   let (t', l') as x = L.lex l in
   if t' = t then x, l'
+  else if t' = L.Eof then raise Done
   else raise Noparse
 ;;
 
@@ -146,6 +149,7 @@ let rec pa_var l =
     let t', l' = L.lex l in
     match t' with
     | L.Ident i -> Var i, l'
+    | L.Eof -> raise Done
     | _ -> raise Noparse
 and pa_name l =
     let t', l' = pa_var l in
@@ -156,11 +160,19 @@ and pa_str l =
     let t', l' = L.lex l in
     match t' with
     | L.Str i -> Str i, l'
+    | L.Eof -> raise Done
     | _ -> raise Noparse
 and pa_num l =
     let t', l' = L.lex l in
     match t' with
     | L.Num i -> Num i, l'
+    | L.Eof -> raise Done
+    | _ -> raise Noparse
+and pa_end l =
+    let t', _ = L.lex l in
+    print_endline ("parser trying pa_end:" ^ L.to_string t');
+    match t' with
+    | L.Eof -> raise Done
     | _ -> raise Noparse
 let pa_const =
     pa_str ||| pa_num;;
@@ -177,6 +189,7 @@ let rec pa_expr l =
     (*||| pa_const*)
     ||| pa_var_or_app
     ||| pa_match
+    ||| pa_end
     end l
 and pa_if l =
     let (((((_, e1), _), e2), _), e3), l' =
@@ -234,7 +247,8 @@ and pa_var_or_app l =
                 App (f, rs), l3
         end
     | L.Plus | L.Minus | L.Eq | L.Less | L.Great ->
-            let op2, l3 = pa_oprand l2 in
+            (*let op2, l3 = pa_oprand l2 in*)
+            let op2, l3 = pa_var_or_app l2 in
             App (Prim (L.to_string next), [f; op2]), l3
             (* should define a pa_bin to enhance this
              * BUG: can't handle `a + 2 + 3` for now. *)

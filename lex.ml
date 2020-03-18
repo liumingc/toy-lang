@@ -27,6 +27,7 @@ type tok =
     | Underline (* _ *)
     | Dddot
     | Eof
+    | Unspec
     (* Keyword *)
     | If
     | Then
@@ -99,6 +100,7 @@ let to_string t =
     | Less -> "<"
     | Great -> ">"
     | Eof -> "EOF"
+    | Unspec -> "??? unspecified"
 ;;
 
 
@@ -146,7 +148,7 @@ let is_kw x =
 let next_tok ic =
     let readc () =
         match !last_char with
-        | None -> input_char ic
+        | None -> input_char ic 
         | Some x -> last_char := None; x in
     (*
     let rec skip_spc () =
@@ -244,7 +246,7 @@ type t =
 ;;
 
 
-let tok_cache = Array.make 5000 Eof;; (* TODO the cache should be increasing automatically *)
+let tok_cache = Array.make 5000 Unspec;; (* TODO the cache should be increasing automatically *)
 let ic = ref stdin;; (* TODO *)
 
 let new_lexer file_name =
@@ -262,14 +264,15 @@ let lex l =
     | Lyes (tok, l') -> tok, l' (* this case is not used *)
     | Lpending i ->
             match tok_cache.(i) with
-            | Eof ->
+            | Unspec ->
                     begin try
                         let x = next_tok !ic in
-                        tok_cache.(i) <- x;
-                        x, Lpending (i+1)
+                        begin tok_cache.(i) <- x;
+                        x, Lpending (i+1) end
                     with End_of_file ->
                         (Eof, Lno)
                     end
+            | Eof -> Eof, Lno
             | x ->
                     x, Lpending (i+1)
 ;;
