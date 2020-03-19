@@ -41,9 +41,18 @@ let listof p sep input =
     let p1 = many (sep ++ p) in
     let p2 = handle p1 (fun rs -> snd (unzip rs)) in
     let p3 = p ++ p2 in
-    let (r1, r2), rest = p3 input in
-    r1::r2, rest
+    try
+        let (r1, r2), rest = p3 input in
+        r1::r2, rest
+    with Noparse ->
+        [], input
 ;;
+
+let maybe p input =
+    try
+        let x, l' = p input in
+        Some x, l'
+    with Noparse -> None, input;;
 
 (*
  * Do i need these things:
@@ -80,7 +89,7 @@ and pat =
     | Pconsts of string
     | Pvar of string
     | Pany
-    | Pctor of pat list (* constructor, or sum type *)
+    | Pctor of string * pat list (* constructor, or sum type *)
     | Precord of recpat list * bool (* if has ..., then bool is true *)
     | Ptuple of pat list
 and recpat = string * pat
@@ -112,7 +121,7 @@ let rec to_string ast =
             sprintf "MATCH %s WITH\n" (to_string e) ^
             List.fold_right (fun x r -> (cla_to_string x) ^ "\n" ^ r) cls ""
     | Prim pr ->
-        sprintf "Prim(%s)" pr
+        sprintf "%s" pr
     end
 and args_to_string args =
     List.fold_right (fun x r -> (x ^ ", " ^ r)) args ""
@@ -121,18 +130,18 @@ and list_to_string f ls =
 and cla_to_string = function (pat, g, e) ->
     let opt_str = begin match g with
     | None -> ""
-    | Some e -> "WHEN " ^ to_string e end in
+    | Some e -> " WHEN " ^ to_string e end in
     sprintf "| %s%s => %s" (pat_to_string pat) opt_str (to_string e)
 and pat_to_string = function
     | Pconsti i -> sprintf "Pconst %d" i
     | Pconsts s -> sprintf "Pconst %s" s
     | Pvar s -> sprintf "Pvar %s" s
     | Pany -> "Pany"
-    | Pctor ps ->
-            "Pctor(" ^
+    | Pctor (ctor, ps) ->
+            ctor ^ "(" ^
             List.fold_right (fun x r -> pat_to_string x ^ "," ^ r) ps ")"
     | Precord (_, _) -> "Precord"
-    | Ptuple ps -> List.fold_right (fun x r -> pat_to_string x ^ "," ^ r) ps ""
+    | Ptuple ps -> "(" ^ List.fold_right (fun x r -> pat_to_string x ^ "," ^ r) ps ")"
 ;;
 
 (* from here on, parser is closely binded with lexer *)
@@ -262,20 +271,43 @@ and pa_match l =
 and pa_cla l =
     let comb_p =
         (* TODO handle when clause *)
-        pa_pat ++ pa_atom L.Rarrow ++ pa_expr in
-    let ((p, _), e2), l' = comb_p l in
-    (p, None, e2), l'
+        pa_pat ++ maybe (pa_atom L.When ++ pa_expr) ++ pa_atom L.Rarrow ++ pa_expr in
+    let (((p, g), _), e2), l' = comb_p l in
+    let g' = match g with
+    | None -> None
+    | Some (_, g) -> Some g in
+    (p, g', e2), l'
 and pa_pat l =
     let t', l' = L.lex l in
-    let p = begin match t' with
-    | L.Num i -> Pconsti i
-    | L.Str s -> Pconsts s
-    | L.Ident i -> Pvar i
-    | L.Underline -> Pany
+    begin match t' with
+    | L.Num i -> Pconsti i, l'
+    | L.Str s -> Pconsts s, l'
+    (* How to known if it's a var or a value constructor?
+     * 1. use different keywords to distinguish them
+     * 2. lookup in env to see which kind does it belong to
+     * 3. use naming convention, for example, if the first name is in upper-case
+     *)
+    | L.Ident i ->
+            begin match i.[0] with
+            (* CONS (a, b)  *)
+            | 'A' .. 'Z' ->
+                    let pats, l2 = pa_pat_tuple l' in
+                    Pctor (i, pats), l2
+            | _ -> Pvar i, l'
+            end
+    | L.Underline -> Pany, l'
+    | L.Lbrace ->
+            let pats, l2 = pa_pat_tuple l in
+            Ptuple pats, l2
     (* TODO *)
     | _ -> raise Noparse
-    end in
-    p, l'
+    end
+and pa_pat_tuple l =
+    let comb_p =
+        pa_atom L.Lbrace ++ listof pa_pat (pa_atom L.Comma) ++
+        pa_atom L.Rbrace in
+    let ((_, pats), _), l' = comb_p l in
+    pats, l'
 ;;
 
 (*

@@ -25,7 +25,7 @@ let () =
           print_endline "==AST==> ";
           print_endline (Parser.to_string e);
           print_endline "=INST|=> ";
-          let irs = Transl.trans e Env.empty in
+          let irs = try Transl.trans e Env.empty with _ -> [] in
           Ir.print_irs irs;
           print_endline "% ";
           lp l'

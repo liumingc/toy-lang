@@ -229,6 +229,7 @@ let next_tok ic =
         | ';' -> Semicolon
         | '-' -> choice '>' Rarrow Minus
         | '<' -> choice '-' Larrow Less
+        | '>' -> Great
         | '/' -> Slash
         | '*' -> Star
         | '+' -> Plus
